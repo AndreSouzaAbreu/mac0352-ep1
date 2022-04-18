@@ -1,0 +1,20 @@
+#ifndef _MOSQUITTO_H
+#define _MOSQUITTO_H
+
+/* CONTROL PACKET TYPE */
+#define CPT_CONNECT 1
+#define CPT_CONNACK 2
+#define CPT_PUBLISH 3
+#define CPT_PUBACK 4
+#define CPT_PUBREC 5
+#define CPT_PUBREL 6
+#define CPT_PUBCOMP 7
+#define CPT_SUBSCRIBE 8
+#define CPT_SUBACK 9
+#define CPT_UNSUBSCRIBE 10
+#define CPT_UNSUBACK 11
+#define CPT_PINGREQ 12
+#define CPT_PINGRESP 13
+#define CPT_DISCONNECT 14
+
+#endif
