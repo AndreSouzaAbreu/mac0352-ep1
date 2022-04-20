@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 char *mkdir_app();
-char *mkpipe_topic(char *basedir, char *topic, int client);
+char *mkpipe_topic(char *basedir, char *topic, int current_client);
 char *get_dirname_topic(char *basedir, char *topic);
 
 char *get_dirname_app();
