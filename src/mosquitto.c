@@ -26,18 +26,18 @@
 #define LISTENQ 1
 #define BUFFER_SIZE 200
 
-void mqtt_disconnect(int connection_fd) {
+void abort_mqtt_connection(int connection_fd) {
   write(connection_fd, MQTT_PACKET_DISCONNET, 2);
   close(connection_fd);
-  exit(1);
+  exit(10);
 }
 
 void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
 {
   if (read(fd, buf, nbytes) != ((ssize_t)nbytes))
   {
-    perror("error reading buffer\n");
-    mqtt_disconnect(fd);
+    fprintf(stderr, "[ERROR]: unable to read from connection into buffer\n");
+    abort_mqtt_connection(fd);
   }
 }
 
@@ -56,18 +56,19 @@ int main(int argc, char **argv)
   pid_t child_pid;
 
   /* Armazena o tamanho da string lida do cliente */
-  ssize_t n;
+  ssize_t offset;
 
-  unsigned char buffer[BUFFER_SIZE + 1];
+  unsigned char buffer[BUFFER_SIZE];
   unsigned char mqtt_control_packet_type;
   unsigned char mqtt_control_packet_type_flag;
   unsigned char mqtt_remaining_length;
   unsigned char mqtt_packet_identifier[2];
-  unsigned char mqtt_topic[256];
+  unsigned char mqtt_topic[MQTT_TOPIC_MAXLENGTH];
   unsigned char mqtt_topic_length;
-  unsigned char mqtt_message[1024];
+  unsigned char mqtt_message[MQTT_MESSAGE_MAXLENGTH];
   unsigned char mqtt_message_length;
-  unsigned char mqtt_packet_publish[1500];
+  unsigned char mqtt_packet_publish[MQTT_PACKET_PUBLISH_MAXLENGTH];
+  unsigned char mqtt_packet_publish_length;
 
   /** Nome do arquivo temporário que vai ser criado.
    ** TODO: isso é bem arriscado em termos de segurança. O ideal é
@@ -83,8 +84,8 @@ int main(int argc, char **argv)
 
   if (argc != 2)
   {
-    fprintf(stderr, "Uso: %s <Porta>\n", argv[0]);
-    fprintf(stderr, "Vai rodar um servidor de echo na porta <Porta> TCP\n");
+    fprintf(stderr, "Description: Runs a mosquitto server on specified port\n");
+    fprintf(stderr, "Usage: %s <port>\n", argv[0]);
     exit(1);
   }
 
@@ -97,7 +98,7 @@ int main(int argc, char **argv)
   listen_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_fd == -1)
   {
-    perror("socket :(\n");
+    perror("[ERROR] unable to create TCP socket\n");
     exit(2);
   }
 
@@ -115,10 +116,9 @@ int main(int argc, char **argv)
   server.sin_family = AF_INET;
   server.sin_addr.s_addr = htonl(INADDR_ANY);
   server.sin_port = htons(atoi(argv[1]));
-  if (bind(listen_fd, (struct sockaddr *)&server,
-        sizeof(server)) == -1)
+  if (bind(listen_fd, (struct sockaddr *)&server, sizeof(server)) == -1)
   {
-    perror("bind :(\n");
+    fprintf(stderr, "[ERROR]: could not bind port %s\n", argv[1]);
     exit(3);
   }
 
@@ -128,12 +128,11 @@ int main(int argc, char **argv)
    * por conexões nos endereços definidos na função bind. */
   if (listen(listen_fd, LISTENQ) == -1)
   {
-    perror("listen :(\n");
+    fprintf(stderr, "[ERROR]: could not activate socket\n");
     exit(4);
   }
 
-  printf("[Servidor no ar. Aguardando conexões na porta %s]\n", argv[1]);
-  printf("[Para finalizar, pressione CTRL+c ou rode um kill ou killall]\n");
+  printf("[NOTICE] server is running on port %s\n", argv[1]);
 
   /* O servidor no final das contas é um loop infinito de espera por
    * conexões e processamento de cada uma individualmente */
@@ -148,7 +147,7 @@ int main(int argc, char **argv)
     connection_fd = accept(listen_fd, (struct sockaddr *)NULL, NULL);
     if (connection_fd == -1)
     {
-      perror("accept :(\n");
+      perror("[ERROR] Could not open socket to for incoming connection\n");
       exit(5);
     }
 
@@ -177,18 +176,18 @@ int main(int argc, char **argv)
 
   /**
    * ╭──────────────────────────────────────────────────────────╮
-   * │                       FIXED HEADER                       │
+   * │                   CHILD PROCESS                          │
    * ╰──────────────────────────────────────────────────────────╯
    */
 
-  printf("[conexão aberta]\n");
+  printf("[NOTICE] new connection (client id = %d)\n", client);
 
   /* Já que está no processo filho, não precisa mais do socket
    * listenfd. Só o processo pai precisa deste socket. */
   close(listen_fd);
 
-
-
+  /******************************************************************************/
+  /* let's handle the first packet */
   /* we expect exactly 14 bytes in the first packet */
   read_or_abort_mqtt_connection(connection_fd, buffer, 14);
 
@@ -198,70 +197,109 @@ int main(int argc, char **argv)
 
   /* close the connection if this is not a mqtt packet of type connection */
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_CONNECT)
-    mqtt_disconnect(connection_fd);
+  {
+    fprintf(stderr, "[ERROR]: client %d sent wrong packet type during CONNECT", client);
+    abort_mqtt_connection(connection_fd);
+  }
 
   /* close connection if protocol name is wrong */
   if (memcmp(&buffer[2], MQTT_PROTOCOL_NAME, 6))
-    mqtt_disconnect(connection_fd);
+  {
+    fprintf(stderr, "[ERROR]: client %d sent wrong protocol name during CONNECT", client);
+    abort_mqtt_connection(connection_fd);
+  }
 
-  /* alright, send a connack packet */
+  /* alright, everything is ok, so send a CONNACK packet then */
   write(connection_fd, MQTT_PACKET_CONNACK, 4);
 
-  /******************************************************************************/
-  /* processar o segundo pacote */
-
-
+  /* let's handle the second packet */
   read_or_abort_mqtt_connection(connection_fd, buffer, 2);
   mqtt_control_packet_type = buffer[0] >> 4;
   mqtt_control_packet_type_flag = buffer[0] % 16;
   mqtt_remaining_length = buffer[1];
 
+  /* read the remaining data (variable header + payload) into the buffer */
   read_or_abort_mqtt_connection(connection_fd, buffer, mqtt_remaining_length);
 
   /******************************************************************************/
   /* subscriber */
   if (mqtt_control_packet_type == MQTT_PACKET_TYPE_SUBSCRIBE)
   {
+    /* topic identifier is the first two bytes */
     memcpy(mqtt_packet_identifier, buffer, 2);
+
+    /* topic length is the fourth byte */
     mqtt_topic_length = buffer[3];
+
+    /* topic name is the next $topic_length bytes */
     memcpy(mqtt_topic, &buffer[4], mqtt_topic_length);
     mqtt_topic[mqtt_topic_length] = '\0';
-    printf("[sub] topic %s\n", mqtt_topic);
 
-    unsigned char mqtt_packet_suback[] = {
-      (MQTT_PACKET_TYPE_SUBACK << 4),
-      0x03,
-      mqtt_packet_identifier[0],
-      mqtt_packet_identifier[1],
-      MQTT_GRANTED_QOS,
-    };
+    printf("[NOTICE] Client %d is listening on topic %s\n", client, mqtt_topic);
+
+    /* now let's send back a response */
+    unsigned char mqtt_packet_suback[5];
+
+    /* first byte is packet type */
+    mqtt_packet_suback[0] = MQTT_PACKET_TYPE_SUBACK << 4;
+
+    /* second byte is remaining length */
+    mqtt_remaining_length = 3;
+    mqtt_packet_suback[1] = mqtt_remaining_length;
+
+    /* third and fourth bytes are packet identifier */
+    mqtt_packet_suback[2] = mqtt_packet_identifier[0];
+    mqtt_packet_suback[3] = mqtt_packet_identifier[1];
+
+    /* last byte is granted QOS */
+    mqtt_packet_suback[4] = MQTT_GRANTED_QOS;
+
+    /* send suback */
     write(connection_fd, mqtt_packet_suback, 5);
 
+    /* enter loop */
     loop
     {
-      /* create and read from pipe */
-      char *pipe_name = mkpipe_topic(app_dir,(char*) mqtt_topic, client);
-      printf("[sub] pipe name is %s\n", pipe_name);
+      /* we will use a pipe to read incoming messages */
+      char* pipe_name = mkpipe_topic(app_dir,(char*) mqtt_topic, client);
+
+      /* create pipe */
       if (mkfifo(pipe_name, 0777) == -1)
       {
-        perror("mkfifo :(\n");
+        fprintf(stderr, "[ERROR] Could not create FIFO for client %d\n", client);
+        break;
       }
+
+      /* open pipe and read a message from it */
       int pipe_fd = open(pipe_name, O_RDONLY);
-      n = read(pipe_fd, buffer, BUFFER_SIZE);
-      buffer[n] = 0;
-      printf("[sub] read %s\n", buffer);
+      mqtt_message_length = read(pipe_fd, mqtt_message, MQTT_MESSAGE_MAXLENGTH);
+      mqtt_message[mqtt_message_length] = 0;
+
+      /* close and remove pipe */
       close(pipe_fd);
       unlink(pipe_name);
 
-      /* send a publish packet to the client */
-      mqtt_packet_publish[0] = (MQTT_PACKET_TYPE_PUBLISH << 4);
-      mqtt_packet_publish[1] = 2 + n + mqtt_topic_length;
+      /* first byte is packet type */
+      mqtt_packet_publish[0] = MQTT_PACKET_TYPE_PUBLISH << 4;
+
+      /* second byte is remaining length */
+      mqtt_remaining_length = 2 + mqtt_message_length + mqtt_topic_length;
+      mqtt_packet_publish[1] = mqtt_remaining_length;
+
+      /* third and fourth bytes are the topic length */
       mqtt_packet_publish[2] = 0;
       mqtt_packet_publish[3] = mqtt_topic_length;
+
+      /* then we append the topic name */
       memcpy(&mqtt_packet_publish[4], mqtt_topic, mqtt_topic_length);
-      memcpy(&mqtt_packet_publish[4 + mqtt_topic_length], buffer, n);
-      printf("[pub] will send packet... n=%zd l=%u\n",n,mqtt_topic_length);
-      write(connection_fd, mqtt_packet_publish,4+mqtt_topic_length+n );
+
+      /* then we append the message */
+      offset = 4 + mqtt_topic_length;
+      memcpy(&mqtt_packet_publish[offset], mqtt_message, mqtt_message_length);
+
+      /* write */
+      mqtt_packet_publish_length = 2 + mqtt_remaining_length;
+      write(connection_fd, mqtt_packet_publish, mqtt_packet_publish_length);
     }
 
     close(connection_fd);
@@ -272,25 +310,36 @@ int main(int argc, char **argv)
   /* publisher */
   if (mqtt_control_packet_type == MQTT_PACKET_TYPE_PUBLISH)
   {
-    mqtt_topic_length = MAX(buffer[0], buffer[1]);
+    /* topic length is second byte */
+    mqtt_topic_length = buffer[1];
+
+    /* copy topic name */
     memcpy(mqtt_topic, &buffer[2], mqtt_topic_length);
     mqtt_topic[(int) mqtt_topic_length] = '\0';
 
-    mqtt_message_length = mqtt_remaining_length - (2+mqtt_topic_length);
-    memcpy(mqtt_message, &buffer[2+(int)mqtt_topic_length], mqtt_message_length);
-    printf("[pub] topic: %s\nmessage: %s\n", mqtt_topic, mqtt_message);
+    /* message length = payload size - first two bytes - topic length */
+    offset = 2 + mqtt_topic_length;
+    mqtt_message_length = mqtt_remaining_length - offset;
 
-    DIR *dir;
+    /* copy message */
+    memcpy(mqtt_message, &buffer[offset], mqtt_message_length);
+    mqtt_message[mqtt_message_length] = '\0';
+
+    printf("[NOTICE] Client %d publishing on %s the message %s\n", client, mqtt_topic, mqtt_message);
+
+    /* open the dir which has the pipes of clients listening on the current topic */
     struct dirent *file;
-    char *dirname;
-    dirname = mkdir_topic(app_dir,(char*) mqtt_topic);
-    dir = opendir(dirname);
+    char *dirname = mkdir_topic(app_dir,(char*) mqtt_topic);
+    DIR  *dir = opendir(dirname);
+
+    /* no clients... */
     if (dir == NULL)
     {
       close(connection_fd);
       exit(0);
     }
-    printf("\n[pub] writing...\n");
+
+    /* write the message on each client pipe */
     while ((file = readdir(dir)) != NULL)
     {
       char pipe_name[255];
@@ -300,11 +349,12 @@ int main(int argc, char **argv)
       if (strcmp(filename, "..") == 0)
         continue;
       sprintf(pipe_name, "%s/%s", dirname, filename);
-      printf("[pub] found pipe %s\n", pipe_name);
       int pipe_fd = open(pipe_name, O_WRONLY);
       write(pipe_fd, mqtt_message, mqtt_message_length);
       close(pipe_fd);
     }
+
+    /* close the directory and the connection */
     closedir(dir);
     close(connection_fd);
     return 0;
@@ -312,8 +362,6 @@ int main(int argc, char **argv)
 
   /******************************************************************************/
   /* wrong packet type, close connection */
-  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
-  close(connection_fd);
-  perror("wrong packet type\n");
-  return 1;
+  fprintf(stderr, "[ERROR]: client %d sent wrong packet type after CONNACK", client);
+  abort_mqtt_connection(connection_fd);
 }
