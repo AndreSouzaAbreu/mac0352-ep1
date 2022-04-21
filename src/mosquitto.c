@@ -20,11 +20,26 @@
 
 /* macros */
 #define loop for (;;)
+#define MAX(a,b) (a > b ? a : b)
 
 /* constants */
 #define LISTENQ 1
-#define MAXDATASIZE 100
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 200
+
+void mqtt_disconnect(int connection_fd) {
+  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
+  close(connection_fd);
+  exit(1);
+}
+
+void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
+{
+  if (read(fd, buf, nbytes) != ((ssize_t)nbytes))
+  {
+    perror("error reading buffer\n");
+    mqtt_disconnect(fd);
+  }
+}
 
 int main(int argc, char **argv)
 {
@@ -40,11 +55,19 @@ int main(int argc, char **argv)
    * quem é o processo pai */
   pid_t child_pid;
 
-  /* Armazena linhas recebidas do cliente */
-  char buffer[BUFFER_SIZE + 1];
-
   /* Armazena o tamanho da string lida do cliente */
   ssize_t n;
+
+  unsigned char buffer[BUFFER_SIZE + 1];
+  unsigned char mqtt_control_packet_type;
+  unsigned char mqtt_control_packet_type_flag;
+  unsigned char mqtt_remaining_length;
+  unsigned char mqtt_packet_identifier[2];
+  unsigned char mqtt_topic[256];
+  unsigned char mqtt_topic_length;
+  unsigned char mqtt_message[1024];
+  unsigned char mqtt_message_length;
+  unsigned char mqtt_packet_publish[1500];
 
   /** Nome do arquivo temporário que vai ser criado.
    ** TODO: isso é bem arriscado em termos de segurança. O ideal é
@@ -152,7 +175,12 @@ int main(int argc, char **argv)
     close(connection_fd);
   }
 
-  /**** PROCESSO FILHO ****/
+  /**
+   * ╭──────────────────────────────────────────────────────────╮
+   * │                       FIXED HEADER                       │
+   * ╰──────────────────────────────────────────────────────────╯
+   */
+
   printf("[conexão aberta]\n");
 
   /* Já que está no processo filho, não precisa mais do socket
@@ -160,135 +188,132 @@ int main(int argc, char **argv)
   close(listen_fd);
 
 
-  /**
-   * ╭──────────────────────────────────────────────────────────╮
-   * │                       FIXED HEADER                       │
-   * ╰──────────────────────────────────────────────────────────╯
-   */
 
-  /* unsigned int mqtt_protocol_name[6]; */
-  unsigned int byte,
-   mqtt_control_packet_type,
-   mqtt_control_packet_type_flag,
-   mqtt_remaining_length,
-   mqtt_protocol_level,
-   mqtt_connect_flags,
-   mqtt_keep_alive;
-  char mqtt_protocol_name[6];
+  /* we expect exactly 14 bytes in the first packet */
+  read_or_abort_mqtt_connection(connection_fd, buffer, 14);
 
-  /* read one byte and store it */
-  read(connection_fd, &byte, 1);
-  mqtt_control_packet_type = (byte >> 4);
-  mqtt_control_packet_type_flag = byte - (byte >> 4);
-
-  printf("byte %02x\n", byte);
-  printf("type %d\n", mqtt_control_packet_type);
+  /* find out packet type */
+  mqtt_control_packet_type = buffer[0] >> 4;      /* extract 4 bits on the left */
+  mqtt_control_packet_type_flag = buffer[0] % 16; /* extract 4 bits on the right */
 
   /* close the connection if this is not a mqtt packet of type connection */
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_CONNECT)
-  {
-    close(connection_fd);
-    exit(1);
-  }
+    mqtt_disconnect(connection_fd);
 
-  read(connection_fd, &byte, 1);
-  mqtt_remaining_length = byte;
-  printf("length %d\n", mqtt_remaining_length );
+  /* close connection if protocol name is wrong */
+  if (memcmp(&buffer[2], MQTT_PROTOCOL_NAME, 6))
+    mqtt_disconnect(connection_fd);
 
-  /*
-   * ╭──────────────────────────────────────────────────────────╮
-   * │                     VARIABLE HEADER                      │
-   * ╰──────────────────────────────────────────────────────────╯
-   */
+  /* alright, send a connack packet */
+  write(connection_fd, MQTT_PACKET_CONNACK, 4);
 
-  read(connection_fd, mqtt_protocol_name, 6);
-  if (memcmp(mqtt_protocol_name, MQTT_PROTOCOL_NAME, 6))
-  {
-    /* protocol name is incorret, close the connection */
-    printf("protocol name is incorrect\n");
-    write(connection_fd, MQTT_PACKET_DISCONNET, 2);
-    close(connection_fd);
-    return 0;
-  }
+  /******************************************************************************/
+  /* processar o segundo pacote */
 
-  printf("protocol name is correct\n");
-  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
-  close(connection_fd);
-  return 0;
 
-  char topic[100];
-  char m;
+  read_or_abort_mqtt_connection(connection_fd, buffer, 2);
+  mqtt_control_packet_type = buffer[0] >> 4;
+  mqtt_control_packet_type_flag = buffer[0] % 16;
+  mqtt_remaining_length = buffer[1];
+
+  read_or_abort_mqtt_connection(connection_fd, buffer, mqtt_remaining_length);
 
   /******************************************************************************/
   /* subscriber */
-  if (m != 'w')
+  if (mqtt_control_packet_type == MQTT_PACKET_TYPE_SUBSCRIBE)
   {
+    memcpy(mqtt_packet_identifier, buffer, 2);
+    mqtt_topic_length = buffer[3];
+    memcpy(mqtt_topic, &buffer[4], mqtt_topic_length);
+    mqtt_topic[mqtt_topic_length] = '\0';
+    printf("[sub] topic %s\n", mqtt_topic);
+
+    unsigned char mqtt_packet_suback[] = {
+      (MQTT_PACKET_TYPE_SUBACK << 4),
+      0x03,
+      mqtt_packet_identifier[0],
+      mqtt_packet_identifier[1],
+      MQTT_GRANTED_QOS,
+    };
+    write(connection_fd, mqtt_packet_suback, 5);
+
     loop
     {
-      char *pipe_name = mkpipe_topic(app_dir, topic, client);
-      if (mkfifo((const char *)pipe_name, 0777) == -1)
+      /* create and read from pipe */
+      char *pipe_name = mkpipe_topic(app_dir,(char*) mqtt_topic, client);
+      printf("[sub] pipe name is %s\n", pipe_name);
+      if (mkfifo(pipe_name, 0777) == -1)
       {
         perror("mkfifo :(\n");
       }
       int pipe_fd = open(pipe_name, O_RDONLY);
-      while ((n = read(pipe_fd, buffer, BUFFER_SIZE)) > 0)
-      {
-        buffer[n] = 0;
-        write(connection_fd, buffer, strlen(buffer));
-      }
+      n = read(pipe_fd, buffer, BUFFER_SIZE);
+      buffer[n] = 0;
+      printf("[sub] read %s\n", buffer);
       close(pipe_fd);
-      unlink((char *)pipe_name);
+      unlink(pipe_name);
+
+      /* send a publish packet to the client */
+      mqtt_packet_publish[0] = (MQTT_PACKET_TYPE_PUBLISH << 4);
+      mqtt_packet_publish[1] = 2 + n + mqtt_topic_length;
+      mqtt_packet_publish[2] = 0;
+      mqtt_packet_publish[3] = mqtt_topic_length;
+      memcpy(&mqtt_packet_publish[4], mqtt_topic, mqtt_topic_length);
+      memcpy(&mqtt_packet_publish[4 + mqtt_topic_length], buffer, n);
+      printf("[pub] will send packet... n=%zd l=%u\n",n,mqtt_topic_length);
+      write(connection_fd, mqtt_packet_publish,4+mqtt_topic_length+n );
     }
+
     close(connection_fd);
     exit(0);
   }
 
   /******************************************************************************/
   /* publisher */
-  const int maxclients = 1001;
-  int pipe_fds[maxclients];
-  int clients = -1;
+  if (mqtt_control_packet_type == MQTT_PACKET_TYPE_PUBLISH)
+  {
+    mqtt_topic_length = MAX(buffer[0], buffer[1]);
+    memcpy(mqtt_topic, &buffer[2], mqtt_topic_length);
+    mqtt_topic[(int) mqtt_topic_length] = '\0';
 
-  DIR *dir;
-  struct dirent *file;
-  char *dirname;
-  dirname = mkdir_topic(app_dir, topic);
-  dir = opendir(dirname);
-  if (dir == NULL)
-  {
-    close(connection_fd);
-    exit(0);
-  }
-  while ((file = readdir(dir)) != NULL)
-  {
-    char pipe_name[255];
-    char *filename = file->d_name;
-    if (strcmp(filename, ".") == 0)
-      continue;
-    if (strcmp(filename, "..") == 0)
-      continue;
-    sprintf(pipe_name, "%s/%s", dirname, filename);
-    printf("added %s\n", pipe_name);
-    int pipe_fd = open(pipe_name, O_WRONLY);
-    clients++;
-    pipe_fds[clients] = pipe_fd;
-  }
-  closedir(dir);
-  while ((n = read(connection_fd, buffer, BUFFER_SIZE)) > 0)
-  {
-    buffer[n] = 0;
-    int len = strlen(buffer);
-    for (int i = 0; i <= clients; i += 1)
+    mqtt_message_length = mqtt_remaining_length - (2+mqtt_topic_length);
+    memcpy(mqtt_message, &buffer[2+(int)mqtt_topic_length], mqtt_message_length);
+    printf("[pub] topic: %s\nmessage: %s\n", mqtt_topic, mqtt_message);
+
+    DIR *dir;
+    struct dirent *file;
+    char *dirname;
+    dirname = mkdir_topic(app_dir,(char*) mqtt_topic);
+    dir = opendir(dirname);
+    if (dir == NULL)
     {
-      write(pipe_fds[i], buffer, len);
+      close(connection_fd);
+      exit(0);
     }
+    printf("\n[pub] writing...\n");
+    while ((file = readdir(dir)) != NULL)
+    {
+      char pipe_name[255];
+      char *filename = file->d_name;
+      if (strcmp(filename, ".") == 0)
+        continue;
+      if (strcmp(filename, "..") == 0)
+        continue;
+      sprintf(pipe_name, "%s/%s", dirname, filename);
+      printf("[pub] found pipe %s\n", pipe_name);
+      int pipe_fd = open(pipe_name, O_WRONLY);
+      write(pipe_fd, mqtt_message, mqtt_message_length);
+      close(pipe_fd);
+    }
+    closedir(dir);
+    close(connection_fd);
+    return 0;
   }
-  /* close all pipes */
-  for (int i = 0; i <= clients; i += 1)
-  {
-    close(pipe_fds[i]);
-  }
-  /* close connection */
+
+  /******************************************************************************/
+  /* wrong packet type, close connection */
+  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
   close(connection_fd);
-  exit(0);
+  perror("wrong packet type\n");
+  return 1;
 }

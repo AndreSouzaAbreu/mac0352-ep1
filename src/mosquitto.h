@@ -17,7 +17,10 @@
 #define MQTT_PACKET_TYPE_PINGRESP 13
 #define MQTT_PACKET_TYPE_DISCONNECT 14
 
-const char MQTT_PROTOCOL_NAME[] = { 0x00, 0x04, 'M', 'Q', 'T', 'T' };
-const unsigned int MQTT_PACKET_DISCONNET[] = { 0b11100000, 0x00 };
+#define MQTT_GRANTED_QOS 0
+
+const unsigned char MQTT_PROTOCOL_NAME[] = { 0x00, 0x04, 'M', 'Q', 'T', 'T' };
+const unsigned char MQTT_PACKET_DISCONNET[] = { 0xe0, 0x00 };
+const unsigned char MQTT_PACKET_CONNACK[] = { 0x20, 0x02, 0x00, 0x00 };
 
 #endif
