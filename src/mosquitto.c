@@ -82,6 +82,11 @@ int main(int argc, char **argv)
   /* nome do diretório da instância desta aplicação */
   char *app_dir = mkdir_app();
 
+  /* dir where we will store active clients */
+  char active_clients_dir[256];
+  sprintf(active_clients_dir, "%s/active_clients", app_dir);
+  mkdir(active_clients_dir, 0770);
+
   if (argc != 2)
   {
     fprintf(stderr, "Description: Runs a mosquitto server on specified port\n");
@@ -235,7 +240,7 @@ int main(int argc, char **argv)
     memcpy(mqtt_topic, &buffer[4], mqtt_topic_length);
     mqtt_topic[mqtt_topic_length] = '\0';
 
-    printf("[NOTICE] Client %d is listening on topic %s\n", client, mqtt_topic);
+    printf("[NOTICE] client %d is listening on topic %s\n", client, mqtt_topic);
 
     /* now let's send back a response */
     unsigned char mqtt_packet_suback[5];
@@ -257,7 +262,56 @@ int main(int argc, char **argv)
     /* send suback */
     write(connection_fd, mqtt_packet_suback, 5);
 
-    /* enter loop */
+    /* create a file for the client to indicate active connection */
+    char client_filename[300];
+    sprintf(client_filename, "%s/%d", active_clients_dir, client);
+    FILE*  client_file = fopen(client_filename, "w");
+    if (client_file == NULL)
+    {
+      fprintf(stderr, "[ERROR]: could not create file for client %d\n", client);
+      abort_mqtt_connection(connection_fd);
+    }
+    fclose(client_file);
+
+    child_pid = fork();
+
+    if (child_pid)
+    {
+      loop
+      {
+        /* wait for incoming DISCONNECT request */
+        read(connection_fd, buffer, 2);
+        mqtt_control_packet_type = buffer[0] >> 4;
+        mqtt_remaining_length = buffer[1];
+
+        /* we got a PING request, so send a PING response */
+        if (mqtt_control_packet_type == MQTT_PACKET_TYPE_PINGREQ &&
+            mqtt_remaining_length == 0)
+        {
+          write(connection_fd, MQTT_PACKET_PINGRESP, 2);
+          continue;
+        }
+
+        /* regardless of what happens next, this client will be disconnected so
+         * remove its file from the directory of active clients */
+        unlink(client_filename);
+
+        /* clean disconnect request :) */
+        if (mqtt_control_packet_type == MQTT_PACKET_TYPE_DISCONNECT &&
+            mqtt_remaining_length == 0)
+        {
+          printf("[NOTICE] client %d disconnected\n", client);
+          close(connection_fd);
+          exit(0);
+        }
+
+        /* bad, unexpected message! abort! */
+        fprintf(stderr, "[ERROR] unexpected packet from client %d\n", client);
+        abort_mqtt_connection(connection_fd);
+      }
+    }
+
+    /* wait for new messages eternaly */
     loop
     {
       /* we will use a pipe to read incoming messages */
@@ -267,6 +321,7 @@ int main(int argc, char **argv)
       if (mkfifo(pipe_name, 0777) == -1)
       {
         fprintf(stderr, "[ERROR] Could not create FIFO for client %d\n", client);
+        abort_mqtt_connection(connection_fd);
         break;
       }
 
@@ -279,6 +334,21 @@ int main(int argc, char **argv)
       close(pipe_fd);
       unlink(pipe_name);
 
+      /* before we write any message, we need to check if the client is active
+       * we do so by checking if there exists its file in the directory of
+       * active clients */
+      int client_file_fd = open(client_filename, O_RDONLY);
+
+      /* file does not exist, meaning client is no longer active */ 
+      if (client_file_fd == -1)
+      {
+        exit(0);
+      }
+
+      /* client is active, close the fd and move on */
+      close(client_file_fd);
+
+      /* let's send a packet then */
       /* first byte is packet type */
       mqtt_packet_publish[0] = MQTT_PACKET_TYPE_PUBLISH << 4;
 
@@ -302,8 +372,6 @@ int main(int argc, char **argv)
       write(connection_fd, mqtt_packet_publish, mqtt_packet_publish_length);
     }
 
-    close(connection_fd);
-    exit(0);
   }
 
   /******************************************************************************/
@@ -325,7 +393,7 @@ int main(int argc, char **argv)
     memcpy(mqtt_message, &buffer[offset], mqtt_message_length);
     mqtt_message[mqtt_message_length] = '\0';
 
-    printf("[NOTICE] Client %d publishing on %s the message %s\n", client, mqtt_topic, mqtt_message);
+    printf("[NOTICE] client %d publishing on topic '%s'\n", client, mqtt_topic);
 
     /* open the dir which has the pipes of clients listening on the current topic */
     struct dirent *file;

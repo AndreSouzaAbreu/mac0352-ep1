@@ -26,5 +26,6 @@
 const unsigned char MQTT_PROTOCOL_NAME[] = { 0x00, 0x04, 'M', 'Q', 'T', 'T' };
 const unsigned char MQTT_PACKET_DISCONNET[] = { 0xe0, 0x00 };
 const unsigned char MQTT_PACKET_CONNACK[] = { 0x20, 0x02, 0x00, 0x00 };
+const unsigned char MQTT_PACKET_PINGRESP[] = { 0xd0, 0x00 };
 
 #endif
