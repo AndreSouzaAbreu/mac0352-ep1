@@ -6,7 +6,7 @@ CFLAGS := -Wall
 DIR_BIN := bin
 DIR_SRC := src
 
-OBJ := $(wildcard ${DIR_SRC}/*.c ${DIR_SRC}/*.h)
+OBJ := $(shell find ${DIR_SRC} -type f)
 BIN := ${DIR_BIN}/mosquitto
 
 ################################################################################
@@ -21,5 +21,8 @@ run: ${BIN}
 
 ${BIN}: ${OBJ}
 	${CC} ${CFLAGS} $^ -o $@
+
+tags: ${OBJ}
+	ctags $^
 
 .PHONY: all clean run
