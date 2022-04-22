@@ -1,0 +1,20 @@
+# ignore files without extensions, except for Makefile
+*
+!/**/
+!*.*
+!Makefile
+
+# ignore compiled assets
+*.o
+*.out
+*.class
+
+# ignore ignore compressed files
+*.tar
+*.tar.bz2
+*.tar.gz
+*.tgz
+*.bz2
+*.rar
+*.zip
+*.7z
