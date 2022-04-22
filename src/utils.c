@@ -24,6 +24,7 @@ static bool seed_not_set = true;
 /******************************************************************************/
 /* IMPLEMENTATION OF THE LIBRARY */
 
+
 /**
  * Generate random dirname for the application
  **/

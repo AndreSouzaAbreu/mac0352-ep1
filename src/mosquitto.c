@@ -20,13 +20,13 @@
 
 /* macros */
 #define loop for (;;)
-#define MAX(a,b) (a > b ? a : b)
 
 /* constants */
 #define LISTENQ 1
 #define BUFFER_SIZE 200
 
-void abort_mqtt_connection(int connection_fd) {
+void abort_mqtt_connection(int connection_fd)
+{
   write(connection_fd, MQTT_PACKET_DISCONNET, 2);
   close(connection_fd);
   exit(10);
@@ -43,7 +43,6 @@ void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
 
 int main(int argc, char **argv)
 {
-
   /* Os sockets. Um que será o socket que vai escutar pelas conexões
    * e o outro que vai ser o socket específico de cada conexão */
   int listen_fd, connection_fd;
@@ -60,7 +59,6 @@ int main(int argc, char **argv)
 
   unsigned char buffer[BUFFER_SIZE];
   unsigned char mqtt_control_packet_type;
-  unsigned char mqtt_control_packet_type_flag;
   unsigned char mqtt_remaining_length;
   unsigned char mqtt_packet_identifier[2];
   unsigned char mqtt_topic[MQTT_TOPIC_MAXLENGTH];
@@ -70,13 +68,8 @@ int main(int argc, char **argv)
   unsigned char mqtt_packet_publish[MQTT_PACKET_PUBLISH_MAXLENGTH];
   unsigned char mqtt_packet_publish_length;
 
-  /** Nome do arquivo temporário que vai ser criado.
-   ** TODO: isso é bem arriscado em termos de segurança. O ideal é
-   ** que os nomes dos arquivos sejam criados com a função mkstemp e
-   ** essas strings sejam templates para o mkstemp. **/
 
-  /** Variável que vai contar quantos clientes estão conectados.
-   ** Necessário para saber se é o primeiro cliente ou não. **/
+  /* Variável que vai contar quantos clientes estão conectados */
   int client = 0;
 
   /* nome do diretório da instância desta aplicação */
@@ -94,12 +87,11 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  /* Criação de um socket. É como se fosse um descritor de arquivo.
-   * É possível fazer operações como read, write e close. Neste caso o
-   * socket criado é um socket IPv4 (por causa do AF_INET), que vai
-   * usar TCP (por causa do SOCK_STREAM), já que o MQTT funciona sobre
-   * TCP, e será usado para uma aplicação convencional sobre a Internet
-   * (por causa do número 0) */
+  /* Criação de um socket. É como se fosse um descritor de arquivo.  É  possível
+   * fazer operações como read, write e close. Neste caso o socket criado  é  um
+   * socket IPv4 (por causa  do  AF_INET),  que  vai  usar  TCP  (por  causa  do
+   * SOCK_STREAM), já que o MQTT funciona sobre  TCP,  e  será  usado  para  uma
+   * aplicação convencional sobre a Internet (por causa do número 0) */
   listen_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_fd == -1)
   {
@@ -107,14 +99,13 @@ int main(int argc, char **argv)
     exit(2);
   }
 
-  /* Agora é necessário informar os endereços associados a este
-   * socket. É necessário informar o endereço / interface e a porta,
-   * pois mais adiante o socket ficará esperando conexões nesta porta
-   * e neste(s) endereços. Para isso é necessário preencher a struct
-   * servaddr. É necessário colocar lá o tipo de socket (No nosso
-   * caso AF_INET porque é IPv4), em qual endereço / interface serão
-   * esperadas conexões (Neste caso em qualquer uma -- INADDR_ANY) e
-   * qual a porta. Neste caso será a porta que foi passada como
+  /* Agora é necessário informar  os  endereços  associados  a  este  socket.  É
+   * necessário informar o endereço / interface e a porta, pois mais  adiante  o
+   * socket ficará esperando conexões nesta porta  e  neste(s)  endereços.  Para
+   * isso é necessário preencher a struct servaddr. É necessário  colocar  lá  o
+   * tipo de socket (No nosso caso AF_INET porque é IPv4), em  qual  endereço  /
+   * interface serão esperadas  conexões  (Neste  caso  em  qualquer  uma,  pois
+   * INADDR_ANY) e qual a porta. Neste caso será a porta que  foi  passada  como
    * argumento no shell (atoi(argv[1]))
    */
   bzero(&server, sizeof(server));
@@ -127,10 +118,11 @@ int main(int argc, char **argv)
     exit(3);
   }
 
-  /* Como este código é o código de um servidor, o socket será um
-   * socket passivo. Para isto é necessário chamar a função listen
-   * que define que este é um socket de servidor que ficará esperando
-   * por conexões nos endereços definidos na função bind. */
+  /* Como este código é o código  de  um  servidor,  o  socket  será  um  socket
+   * passivo. Para isto é necessário chamar a função listen que define que  este
+   * é um socket de servidor que ficará esperando  por  conexões  nos  endereços
+   * definidos na função bind. */
+
   if (listen(listen_fd, LISTENQ) == -1)
   {
     fprintf(stderr, "[ERROR]: could not activate socket\n");
@@ -139,16 +131,23 @@ int main(int argc, char **argv)
 
   printf("[NOTICE] server is running on port %s\n", argv[1]);
 
-  /* O servidor no final das contas é um loop infinito de espera por
-   * conexões e processamento de cada uma individualmente */
+  /*
+   * ╭─────────────────────────────────────────────────────────────────────────╮
+   * │                                                                SERVIDOR │
+   * ╰─────────────────────────────────────────────────────────────────────────╯
+   */
+
+  /* O servidor entra em loop infinito processando uma por conexão por vez */
   loop
   {
-    /* O socket inicial que foi criado é o socket que vai aguardar pela conexão
-     * na porta especificada. Mas pode ser que existam diversos clientes
-     * conectando no servidor. Por isso deve-se utilizar a função accept. Esta
-     * função vai retirar uma conexão da fila de conexões que foram aceitas no
-     * socket listenfd e vai criar um socket específico para esta conexão. O
+
+    /* O socket inicial que foi criado é o socket que vai aguardar pela  conexão
+     * na porta  especificada.  Mas  pode  ser  que  existam  diversos  clientes
+     * conectando no servidor. Por isso deve-se utilizar a função  accept.  Esta
+     * função vai retirar uma conexão da fila de conexões que foram  aceitas  no
+     * socket listenfd e vai criar um socket específico  para  esta  conexão.  O
      * descritor deste novo socket é o retorno da função accept. */
+
     connection_fd = accept(listen_fd, (struct sockaddr *)NULL, NULL);
     if (connection_fd == -1)
     {
@@ -156,92 +155,204 @@ int main(int argc, char **argv)
       exit(5);
     }
 
-    /* Agora o servidor precisa tratar este cliente de forma separada. Para
-     * isto é criado um processo filho usando a função fork. O processo vai ser
-     * uma cópia deste. Depois da função fork, os dois processos (pai e filho)
-     * estarão no mesmo ponto do código, mas cada um terá um PID diferente.
-     * Assim é possível diferenciar o que cada processo terá que fazer. O filho
-     * tem que processar a requisição do cliente. O pai tem que voltar no loop
-     * para continuar aceitando novas conexões. Se o retorno da função fork for
+    /* Agora o servidor precisa tratar este  cliente  de  forma  separada.  Para
+     * isto é criado um processo filho usando a função fork. O processo vai  ser
+     * uma cópia deste. Depois da função fork, os dois processos (pai  e  filho)
+     * estarão no mesmo ponto do código, mas cada  um  terá  um  PID  diferente.
+     * Assim é possível diferenciar o que cada processo terá que fazer. O  filho
+     * tem que processar a requisição do cliente. O pai tem que voltar  no  loop
+     * para continuar aceitando novas conexões. Se o retorno da função fork  for
      * zero, é porque está no processo filho. */
+
     child_pid = fork();
     client += 1;
 
-    /* processo filho será tratado fora deste loop para evitar código muito
-     * nestado */
+    /* processo filho será tratado fora deste loop para evitar código nestado */
     if (child_pid == 0)
       break;
 
-    /**** PROCESSO PAI ****/
     /* Se for o processo pai, a única coisa a ser feita é fechar o socket
      * conn_fd (ele é o socket do cliente específico que será tratado pelo
-     * processo filho) */
+     * processo filho logo abaixo) */
     close(connection_fd);
   }
 
-  /**
-   * ╭──────────────────────────────────────────────────────────╮
-   * │                   CHILD PROCESS                          │
-   * ╰──────────────────────────────────────────────────────────╯
+  /*
+   * ╭─────────────────────────────────────────────────────────────────────────╮
+   * │                                                                 CLIENTE │
+   * ╰─────────────────────────────────────────────────────────────────────────╯
    */
 
+  /* imprime uma mensagem informativa */
   printf("[NOTICE] new connection (client id = %d)\n", client);
 
-  /* Já que está no processo filho, não precisa mais do socket
-   * listenfd. Só o processo pai precisa deste socket. */
+  /* Já que está no processo filho, não precisa mais do socket listenfd.
+   * Só o processo pai precisa deste socket. */
   close(listen_fd);
 
-  /******************************************************************************/
-  /* let's handle the first packet */
-  /* we expect exactly 14 bytes in the first packet */
+  /* De agora em diante iremos processar os pacotes enviados pelos clientes.
+   * Os diagramas abaixo ilustram a estrutura dos pacotes */
+
+  /* Structure of an MQTT Control Packet
+     ┌─────────────────────────────────────────────────────────┐
+     │   Fixed header, present in all MQTT Control Packets     │
+     ├─────────────────────────────────────────────────────────┤
+     │   Variable header, present in some MQTT Control Packets │
+     ├─────────────────────────────────────────────────────────┤
+     │   Payload, present in some MQTT Control Packets         │
+     └─────────────────────────────────────────────────────────┘
+
+     FIXED HEADER
+     ┌────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+     │ Bit    │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+     ├────────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+     │ byte 1 │ MQTT Control Packet type      │ Flag specific for each type   │ 
+     ├────────┼───────────────────────────────┴───────────────────────────────┤
+     │ byte 2 │                      Remaining Length                         │
+     └────────┴───────────────────────────────────────────────────────────────┘
+  */
+
+
+  /***************************************************************************/
+  /* CONNECT PACKET */
+
+  /* we expect exactly 14 bytes in the first packet (must be acontrol packet)
+   *
+   * fixed header: 2 bytes 
+   * variable header: 10 bytes
+   * payload: 2 bytes
+   *
+   * abort connection if there is less than 14 bytes to read */
   read_or_abort_mqtt_connection(connection_fd, buffer, 14);
 
-  /* find out packet type */
-  mqtt_control_packet_type = buffer[0] >> 4;      /* extract 4 bits on the left */
-  mqtt_control_packet_type_flag = buffer[0] % 16; /* extract 4 bits on the right */
+  /* packet type are the 4 MSB of the first byte*/
+  mqtt_control_packet_type = buffer[0] >> 4;
 
   /* close the connection if this is not a mqtt packet of type connection */
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_CONNECT)
   {
-    fprintf(stderr, "[ERROR]: client %d sent wrong packet type during CONNECT", client);
+    fprintf(stderr,
+        "[ERROR]: client %d sent wrong packet type during CONNECT", client);
     abort_mqtt_connection(connection_fd);
   }
+
+  /* Protocol Name
+     ┌──────┬────────────────┐
+     │ byte │ description    │
+     ├──────┼────────────────┤
+     │  1   │ Length MSB (0) │
+     │  2   │ Length LSB (4) │
+     │  3   │ 'M'            │
+     │  4   │ 'Q'            │
+     │  5   │ 'T'            │
+     │  6   │ 'T'            │
+     └──────┴────────────────┘
+  */
 
   /* close connection if protocol name is wrong */
   if (memcmp(&buffer[2], MQTT_PROTOCOL_NAME, 6))
   {
-    fprintf(stderr, "[ERROR]: client %d sent wrong protocol name during CONNECT", client);
+    fprintf(stderr,
+        "[ERROR]: client %d sent wrong protocol name during CONNECT", client);
     abort_mqtt_connection(connection_fd);
   }
 
-  /* alright, everything is ok, so send a CONNACK packet then */
+  /***************************************************************************/
+  /* CONNACK PACKET
+     ┌────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+     │ Bit    │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+     ├────────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+     │ byte 1 │ MQTT Control Packet type (2)  │            RESERVED (0)       │ 
+     ├────────┼───────────────────────────────┴───────────────────────────────┤
+     │ byte 2 │                      Remaining Length (2)                     │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 3 │ Connect Acknowledgement Flags (0)                             │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 4 │ Connect Return Code (0)                                       │
+     └────────┴───────────────────────────────────────────────────────────────┘  
+  */
+
+  /* connection was sucessful */
+  /* so send a CONNACK packet */
   write(connection_fd, MQTT_PACKET_CONNACK, 4);
 
-  /* let's handle the second packet */
+  /***************************************************************************/
+  /* SECOND PACKET */
+
+  /* we don't know if the client is a subscriber or publisher
+   * we have to find that out checking the packet type */
   read_or_abort_mqtt_connection(connection_fd, buffer, 2);
   mqtt_control_packet_type = buffer[0] >> 4;
-  mqtt_control_packet_type_flag = buffer[0] % 16;
   mqtt_remaining_length = buffer[1];
 
   /* read the remaining data (variable header + payload) into the buffer */
   read_or_abort_mqtt_connection(connection_fd, buffer, mqtt_remaining_length);
 
-  /******************************************************************************/
-  /* subscriber */
+  /***************************************************************************/
+  /* SUBSCRIBER */
   if (mqtt_control_packet_type == MQTT_PACKET_TYPE_SUBSCRIBE)
   {
+
+    /*************************************************************************/
+    /* Subscribe Packet
+     ┌────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+     │ Bit    │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+     ├────────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+     │ byte 1 │ MQTT Control Packet type (8)  │             Flags             │ 
+     ├────────┼───────────────────────────────┴───────────────────────────────┤
+     │ byte 2 │                      Remaining Length                         │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 3 │ Package Identifier MSB                                        │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 4 │ Package Identifier LSB                                        │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 5 │ Topic Length LSB                                              │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 6 │ Topic Length MSB                                              │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 7 │ Topic                                                         │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │  ....  │ Topic                                                         │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte n │ Topic                                                         │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte m │ Requested QoS                                                 │
+     └────────┴───────────────────────────────────────────────────────────────┘  
+    */
+
+    /* we have discarded the first two bytes (Fixed Header), so we are dealing
+     * with the Variable Header. Thus, we have an offset of -2 regarding the
+     * table above */
+
     /* topic identifier is the first two bytes */
     memcpy(mqtt_packet_identifier, buffer, 2);
 
     /* topic length is the fourth byte */
     mqtt_topic_length = buffer[3];
 
-    /* topic name is the next $topic_length bytes */
+    /* topic name starts at fifth byte and ends after topic_length bytes */
     memcpy(mqtt_topic, &buffer[4], mqtt_topic_length);
     mqtt_topic[mqtt_topic_length] = '\0';
 
+    /* print some informative message */
     printf("[NOTICE] client %d is listening on topic %s\n", client, mqtt_topic);
 
+    /**************************************************************************/
+    /* Suback Packet
+     ┌────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+     │ Bit    │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+     ├────────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+     │ byte 1 │ MQTT Control Packet type (9)  │            FLAGS (0)          │ 
+     ├────────┼───────────────────────────────┴───────────────────────────────┤
+     │ byte 2 │                      Remaining Length (3)                     │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 3 │ Package Identifier MSB                                        │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 4 │ Package Identifier LSB                                        │
+     ├────────┼───────────────────────────────────────────────────────────────┤
+     │ byte 5 │ Granted QoS (0)                                               │
+     └────────┴───────────────────────────────────────────────────────────────┘  
+    */  
     /* now let's send back a response */
     unsigned char mqtt_packet_suback[5];
 
@@ -262,16 +373,27 @@ int main(int argc, char **argv)
     /* send suback */
     write(connection_fd, mqtt_packet_suback, 5);
 
-    /* create a file for the client to indicate active connection */
+    /**************************************************************************/
+
+    /* let's create a file to indicate that this client is active, meaning it
+     * can receive messages from publishers*/
     char client_filename[300];
     sprintf(client_filename, "%s/%d", active_clients_dir, client);
+
+    /* just open a file and immediatly close it, which creates an empty file */
     FILE*  client_file = fopen(client_filename, "w");
     if (client_file == NULL)
     {
-      fprintf(stderr, "[ERROR]: could not create file for client %d\n", client);
+      fprintf(stderr,
+          "[ERROR]: could not create file for client %d\n", client);
       abort_mqtt_connection(connection_fd);
     }
     fclose(client_file);
+
+    /* now let's fork  the  process.  The  parent  process  will  be  constantly
+     * listening for incoming packets  from  the  subscriber,  while  the  child
+     *  process  will  be  constantly  listening  for  incoming  messages   from
+     * publishers */
 
     child_pid = fork();
 
@@ -279,7 +401,7 @@ int main(int argc, char **argv)
     {
       loop
       {
-        /* wait for incoming DISCONNECT request */
+        /* wait for incoming requests */
         read(connection_fd, buffer, 2);
         mqtt_control_packet_type = buffer[0] >> 4;
         mqtt_remaining_length = buffer[1];
@@ -292,8 +414,9 @@ int main(int argc, char **argv)
           continue;
         }
 
-        /* regardless of what happens next, this client will be disconnected so
-         * remove its file from the directory of active clients */
+        /* regardless of what happens next, this  client  will  be  disconnected
+         * because we only accept PING or DISCONNECT  requests.  So  remove  its
+         * file from the directory of active clients */
         unlink(client_filename);
 
         /* clean disconnect request :) */
@@ -305,13 +428,13 @@ int main(int argc, char **argv)
           exit(0);
         }
 
-        /* bad, unexpected message! abort! */
+        /* bad, unexpected message! Abort! */
         fprintf(stderr, "[ERROR] unexpected packet from client %d\n", client);
         abort_mqtt_connection(connection_fd);
       }
     }
 
-    /* wait for new messages eternaly */
+    /* wait for new messages eternally */
     loop
     {
       /* we will use a pipe to read incoming messages */
@@ -320,7 +443,8 @@ int main(int argc, char **argv)
       /* create pipe */
       if (mkfifo(pipe_name, 0777) == -1)
       {
-        fprintf(stderr, "[ERROR] Could not create FIFO for client %d\n", client);
+        fprintf(stderr,
+            "[ERROR] Could not create FIFO for client %d\n", client);
         abort_mqtt_connection(connection_fd);
         break;
       }
@@ -334,21 +458,49 @@ int main(int argc, char **argv)
       close(pipe_fd);
       unlink(pipe_name);
 
-      /* before we write any message, we need to check if the client is active
-       * we do so by checking if there exists its file in the directory of
+      /* before we write any message, we need to check if the client  is  active
+       * we do so by checking if there exists  its  file  in  the  directory  of
        * active clients */
       int client_file_fd = open(client_filename, O_RDONLY);
 
-      /* file does not exist, meaning client is no longer active */ 
+      /* file does not exist, meaning client is no longer active. Just exit */ 
       if (client_file_fd == -1)
       {
         exit(0);
       }
 
-      /* client is active, close the fd and move on */
+      /* client is active, close the file fd and move on */
       close(client_file_fd);
 
-      /* let's send a packet then */
+      /************************************************************************/
+      /* let's send a publish packet now */
+
+      /* Publish Packet
+       ┌──────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+       │ byte │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+       ├──────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+       │   1  │ MQTT Control Packet type (3)  │            FLAGS (0)          │ 
+       ├──────┼───────────────────────────────┴───────────────────────────────┤
+       │   2  │                      Remaining Length                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   3  │ Topic Legnth MSB                                              │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   4  │ Topic Length LSB                                              │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   7  │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  ... │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  n   │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │ n+1  │ Message                                                       │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  ... │ Message                                                       │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │ n+m  │ Message                                                       │
+       └──────┴───────────────────────────────────────────────────────────────┘  
+      */   
+
       /* first byte is packet type */
       mqtt_packet_publish[0] = MQTT_PACKET_TYPE_PUBLISH << 4;
 
@@ -371,13 +523,39 @@ int main(int argc, char **argv)
       mqtt_packet_publish_length = 2 + mqtt_remaining_length;
       write(connection_fd, mqtt_packet_publish, mqtt_packet_publish_length);
     }
-
   }
 
-  /******************************************************************************/
+  /****************************************************************************/
   /* publisher */
   if (mqtt_control_packet_type == MQTT_PACKET_TYPE_PUBLISH)
   {
+    /* let's process the packet, which is illustrated below */
+    /* Publish Packet
+       ┌──────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+       │ byte │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
+       ├──────┼───────┴───────┴───────┴───────┼───────┴───────┴───────┴───────┤
+       │   1  │ MQTT Control Packet type (3)  │            FLAGS (0)          │ 
+       ├──────┼───────────────────────────────┴───────────────────────────────┤
+       │   2  │                      Remaining Length                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   3  │ Topic Legnth MSB                                              │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   4  │ Topic Length LSB                                              │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │   7  │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  ... │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  n   │ Topic                                                         │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │ n+1  │ Message                                                       │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │  ... │ Message                                                       │
+       ├──────┼───────────────────────────────────────────────────────────────┤
+       │ n+m  │ Message                                                       │
+       └──────┴───────────────────────────────────────────────────────────────┘  
+    */   
+
     /* topic length is second byte */
     mqtt_topic_length = buffer[1];
 
@@ -389,18 +567,19 @@ int main(int argc, char **argv)
     offset = 2 + mqtt_topic_length;
     mqtt_message_length = mqtt_remaining_length - offset;
 
-    /* copy message */
+    /* copy message from buffer */
     memcpy(mqtt_message, &buffer[offset], mqtt_message_length);
     mqtt_message[mqtt_message_length] = '\0';
 
-    printf("[NOTICE] client %d publishing on topic '%s'\n", client, mqtt_topic);
+    /* print some informative message */
+    printf("[NOTICE] client %d publishing on topic: %s\n", client, mqtt_topic);
 
-    /* open the dir which has the pipes of clients listening on the current topic */
+    /* open the dir which has the pipes of clients listening on this topic */
     struct dirent *file;
     char *dirname = mkdir_topic(app_dir,(char*) mqtt_topic);
     DIR  *dir = opendir(dirname);
 
-    /* no clients... */
+    /* no dir means no clients... */
     if (dir == NULL)
     {
       close(connection_fd);
@@ -412,10 +591,14 @@ int main(int argc, char **argv)
     {
       char pipe_name[255];
       char *filename = file->d_name;
+
+      /* skip special dirs */
       if (strcmp(filename, ".") == 0)
         continue;
       if (strcmp(filename, "..") == 0)
         continue;
+
+      /* open pipe, write into it, and close it */
       sprintf(pipe_name, "%s/%s", dirname, filename);
       int pipe_fd = open(pipe_name, O_WRONLY);
       write(pipe_fd, mqtt_message, mqtt_message_length);
@@ -428,8 +611,9 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  /******************************************************************************/
-  /* wrong packet type, close connection */
-  fprintf(stderr, "[ERROR]: client %d sent wrong packet type after CONNACK", client);
+  /****************************************************************************/
+  /* wrong packet type, abort connection */
+  fprintf(stderr,
+      "[ERROR]: client %d sent wrong packet type after CONNACK", client);
   abort_mqtt_connection(connection_fd);
 }
