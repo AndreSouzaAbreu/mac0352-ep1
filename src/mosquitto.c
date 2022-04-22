@@ -127,13 +127,12 @@ int main(int argc, char **argv)
     exit(4);
   }
 
-  printf("[NOTICE] server is running on port %s\n", argv[1]);
-
   /*
    * ╭─────────────────────────────────────────────────────────────────────────╮
    * │                                                                SERVIDOR │
    * ╰─────────────────────────────────────────────────────────────────────────╯
    */
+  printf("[NOTICE] **server is running on port %s**\n\n", argv[1]);
 
   /* O servidor entra em loop infinito processando uma por conexão por vez */
   loop

@@ -6,8 +6,8 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include "sha-256.h"
-#include "utils.h"
+#include "./lib/sha-256.h"
+#include "./utils.h"
 
 /******************************************************************************/
 /* DECLARATION OF HELPER FUNCTIONS */
@@ -26,8 +26,9 @@ static bool seed_not_set = true;
 
 /**
  * Generate random dirname for the application
- **/
-char *get_dirname_app() {
+ * */
+char *get_dirname_app()
+{
   const char dir_prefix[] = "/tmp/mosquitto";
   char *dir, *dirname;
   size_t dir_length = sizeof(char) * 255;
@@ -49,8 +50,9 @@ char *get_dirname_app() {
 /**
  * Generate deterministic dirname for the topic
  * (hash the topic and append to the base directory)
- **/
-char *get_dirname_topic(char *basedir, char *topic) {
+ * */
+char *get_dirname_topic(char *basedir, char *topic)
+{
   char *dir, *hash;
   hash = sha256sum(topic);
   dir = malloc(sizeof(char) * 255);
@@ -65,24 +67,37 @@ char *get_dirname_topic(char *basedir, char *topic) {
   return dir;
 }
 
-char *mkdir_app() {
+/**
+ * Create the directory for the application, return dirname 
+ * */
+char *mkdir_app()
+{
   char *dir = get_dirname_app();
   mkdir(dir, 0770);
   return dir;
 }
 
-char *mkdir_topic(char *basedir, char *topic) {
+/**
+ * Create the directory for the topic, return dirname 
+ * */
+char *mkdir_topic(char *basedir, char *topic)
+{
   char *dir = get_dirname_topic(basedir, topic);
   unsigned int mode = strtol("0770", 0, 8);
   mkdir(dir, mode);
   return dir;
 }
 
-char *mkpipe_topic(char *basedir, char *topic, int client) {
+/**
+ * Create a pipe for the given topic and given client, return filename
+ * */
+char *mkpipe_topic(char *basedir, char *topic, int client)
+{
   char *dirname = get_dirname_topic(basedir, topic);
 
   DIR *dir = opendir(dirname);
-  if (dir == NULL) {
+  if (dir == NULL)
+  {
     free(dirname);
     dirname = mkdir_topic(basedir, topic);
     dir = opendir(dirname);
@@ -98,9 +113,12 @@ char *mkpipe_topic(char *basedir, char *topic, int client) {
   return pipe_name;
 }
 
+/**
+ * Create directory for storing information about active clients, return dirname
+ * */
 char *mkdir_active_clients(char* app_dir)
 {
-  char* active_clients_dir = malloc(sizeof(app_dir)+sizeof(char)*20);
+  char* active_clients_dir = malloc(300);
   sprintf(active_clients_dir, "%s/active_clients", app_dir);
   mkdir(active_clients_dir, 0770);
   return active_clients_dir;
@@ -113,15 +131,20 @@ char *mkdir_active_clients(char* app_dir)
  * Generate a random string
  * (used for temporary file creation)
  **/
-char *get_rand_str(size_t size) {
+char *get_rand_str(size_t size)
+{
   char *str = malloc(sizeof(char) * (size + 1));
 
-  if (seed_not_set) {
+  if (seed_not_set)
+
+  {
     srand(time(0));
     seed_not_set = false;
   }
 
-  for (size_t n = 0; n < size; n++) {
+  for (size_t n = 0; n < size; n++)
+
+  {
     int key = rand() % charset_length;
     str[n] = charset[key];
   }
@@ -134,7 +157,8 @@ char *get_rand_str(size_t size) {
  * Compute the SHA256 hash of a string
  * (used for deterministic file creation)
  **/
-char *sha256sum(char *str) {
+char *sha256sum(char *str)
+{
   /* length of the sha256 hash */
   const int length_hash = SIZE_OF_SHA_256_HASH;
   const int length_hash_str = 2 * length_hash;
@@ -145,12 +169,13 @@ char *sha256sum(char *str) {
   /* hexadecimal string of the hash */
   char *hash_str = malloc(sizeof(char) * (length_hash_str + 1));
 
-  /* calculate the hash */
+  /* calculate the hash using external lib */
   calc_sha_256(hash, str, strlen(str));
 
   /* convert hash number to hash string */
   int j = 0;
-  for (int i = 0; i < length_hash; i += 1) {
+  for (int i = 0; i < length_hash; i += 1)
+  {
     /* this converts a integer to a single hex char */
     char c[3];
     sprintf(c, "%02x", (unsigned int)hash[i]);
