@@ -23,41 +23,38 @@
 
 /* constants */
 #define LISTENQ 1
-#define BUFFER_SIZE 200
+#define BUFFER_SIZE 1024
 
-void abort_mqtt_connection(int connection_fd)
-{
-  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
-  close(connection_fd);
-  exit(10);
-}
+/* local helpers */
+void abort_mqtt_connection(int connection_fd);
+void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes);
 
-void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
-{
-  if (read(fd, buf, nbytes) != ((ssize_t)nbytes))
-  {
-    fprintf(stderr, "[ERROR]: unable to read from connection into buffer\n");
-    abort_mqtt_connection(fd);
-  }
-}
+/******************************************************************************/
+/* Implementation of a simple MQTT server version 3.1.1 */
 
 int main(int argc, char **argv)
 {
-  /* Os sockets. Um que será o socket que vai escutar pelas conexões
-   * e o outro que vai ser o socket específico de cada conexão */
+  /* let's first declare the variables used throughout the program */
+
+  /* connection_fd is the file descriptor of the socket that will  be  listening
+   * for connections, whereas listen_fd is the fd of the socket of a  particular
+   * MQTT connection */
   int listen_fd, connection_fd;
 
-  /* Informações sobre o socket (endereço e porta) ficam nesta struct */
+  /* socket information (ip address and port) is stored in this struct */
   struct sockaddr_in server;
 
-  /* Retorno da função fork para saber quem é o processo filho e
-   * quem é o processo pai */
+  /* variable to store the pid returned by fork, to distinguis between parent 
+   * and child process*/
   pid_t child_pid;
 
-  /* Armazena o tamanho da string lida do cliente */
+  /* buffer to read incoming data */
+  unsigned char buffer[BUFFER_SIZE];
+
+  /* variable to store how many bytes were read */
   ssize_t offset;
 
-  unsigned char buffer[BUFFER_SIZE];
+  /* variables specific to MQTT. Their name already tells you what they are */
   unsigned char mqtt_control_packet_type;
   unsigned char mqtt_remaining_length;
   unsigned char mqtt_packet_identifier[2];
@@ -68,18 +65,20 @@ int main(int argc, char **argv)
   unsigned char mqtt_packet_publish[MQTT_PACKET_PUBLISH_MAXLENGTH];
   unsigned char mqtt_packet_publish_length;
 
-
-  /* Variável que vai contar quantos clientes estão conectados */
+  /* variable to identify current client */
   int client = 0;
 
-  /* nome do diretório da instância desta aplicação */
+  /* name of the directory where all the application data of this instance will
+   * be stored */
   char *app_dir = mkdir_app();
 
-  /* dir where we will store active clients */
-  char active_clients_dir[256];
-  sprintf(active_clients_dir, "%s/active_clients", app_dir);
-  mkdir(active_clients_dir, 0770);
+  /* dir where we will store files of active clients. A client  is  active  only
+   * if there is a file in this dir whose filename matches the client id */
+  char *active_clients_dir = mkdir_active_clients(app_dir);
 
+  /****************************************************************************/
+
+  /* print error messages if user did not provide a port to run on*/
   if (argc != 2)
   {
     fprintf(stderr, "Description: Runs a mosquitto server on specified port\n");
@@ -122,7 +121,6 @@ int main(int argc, char **argv)
    * passivo. Para isto é necessário chamar a função listen que define que  este
    * é um socket de servidor que ficará esperando  por  conexões  nos  endereços
    * definidos na função bind. */
-
   if (listen(listen_fd, LISTENQ) == -1)
   {
     fprintf(stderr, "[ERROR]: could not activate socket\n");
@@ -147,7 +145,6 @@ int main(int argc, char **argv)
      * função vai retirar uma conexão da fila de conexões que foram  aceitas  no
      * socket listenfd e vai criar um socket específico  para  esta  conexão.  O
      * descritor deste novo socket é o retorno da função accept. */
-
     connection_fd = accept(listen_fd, (struct sockaddr *)NULL, NULL);
     if (connection_fd == -1)
     {
@@ -163,7 +160,6 @@ int main(int argc, char **argv)
      * tem que processar a requisição do cliente. O pai tem que voltar  no  loop
      * para continuar aceitando novas conexões. Se o retorno da função fork  for
      * zero, é porque está no processo filho. */
-
     child_pid = fork();
     client += 1;
 
@@ -574,6 +570,9 @@ int main(int argc, char **argv)
     /* print some informative message */
     printf("[NOTICE] client %d publishing on topic: %s\n", client, mqtt_topic);
 
+    /**************************************************************************/
+    /* let's actually publish the message now */
+
     /* open the dir which has the pipes of clients listening on this topic */
     struct dirent *file;
     char *dirname = mkdir_topic(app_dir,(char*) mqtt_topic);
@@ -616,4 +615,23 @@ int main(int argc, char **argv)
   fprintf(stderr,
       "[ERROR]: client %d sent wrong packet type after CONNACK", client);
   abort_mqtt_connection(connection_fd);
+}
+
+/******************************************************************************/
+/* local helpers */
+
+void abort_mqtt_connection(int connection_fd)
+{
+  write(connection_fd, MQTT_PACKET_DISCONNET, 2);
+  close(connection_fd);
+  exit(10);
+}
+
+void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
+{
+  if (read(fd, buf, nbytes) != ((ssize_t)nbytes))
+  {
+    fprintf(stderr, "[ERROR]: unable to read from connection into buffer\n");
+    abort_mqtt_connection(fd);
+  }
 }

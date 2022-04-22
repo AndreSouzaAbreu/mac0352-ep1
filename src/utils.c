@@ -24,7 +24,6 @@ static bool seed_not_set = true;
 /******************************************************************************/
 /* IMPLEMENTATION OF THE LIBRARY */
 
-
 /**
  * Generate random dirname for the application
  **/
@@ -68,8 +67,7 @@ char *get_dirname_topic(char *basedir, char *topic) {
 
 char *mkdir_app() {
   char *dir = get_dirname_app();
-  unsigned int mode = strtol("0770", 0, 8);
-  mkdir(dir, mode);
+  mkdir(dir, 0770);
   return dir;
 }
 
@@ -98,6 +96,14 @@ char *mkpipe_topic(char *basedir, char *topic, int client) {
   free(dirname);
 
   return pipe_name;
+}
+
+char *mkdir_active_clients(char* app_dir)
+{
+  char* active_clients_dir = malloc(sizeof(app_dir)+sizeof(char)*20);
+  sprintf(active_clients_dir, "%s/active_clients", app_dir);
+  mkdir(active_clients_dir, 0770);
+  return active_clients_dir;
 }
 
 /******************************************************************************/
