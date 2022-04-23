@@ -20,6 +20,7 @@ run: ${BIN}
 	./${BIN} 1883
 
 ${BIN}: ${OBJ}
+	mkdir ${DIR_BIN}
 	${CC} ${CFLAGS} $^ -o $@
 
 tags: ${OBJ}
