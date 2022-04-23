@@ -20,7 +20,7 @@ run: ${BIN}
 	./${BIN} 1883
 
 ${BIN}: ${OBJ}
-	mkdir ${DIR_BIN}
+	if [[ ! -d ${DIR_BIN} ]]; then mkdir ${DIR_BIN}; fi
 	${CC} ${CFLAGS} $^ -o $@
 
 tags: ${OBJ}
