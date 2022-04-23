@@ -113,7 +113,7 @@ int main(int argc, char **argv)
   server.sin_port = htons(atoi(argv[1]));
   if (bind(listen_fd, (struct sockaddr *)&server, sizeof(server)) == -1)
   {
-    fprintf(stderr, "[ERROR]: could not bind port %s\n", argv[1]);
+    fprintf(stderr, "[ERROR] could not bind port %s\n", argv[1]);
     exit(3);
   }
 
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
    * definidos na função bind. */
   if (listen(listen_fd, LISTENQ) == -1)
   {
-    fprintf(stderr, "[ERROR]: could not activate socket\n");
+    fprintf(stderr, "[ERROR] could not activate socket\n");
     exit(4);
   }
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     connection_fd = accept(listen_fd, (struct sockaddr *)NULL, NULL);
     if (connection_fd == -1)
     {
-      perror("[ERROR] Could not open socket to for incoming connection\n");
+      perror("[ERROR] could not open socket to for incoming connection\n");
       exit(5);
     }
 
@@ -179,7 +179,7 @@ int main(int argc, char **argv)
    */
 
   /* imprime uma mensagem informativa */
-  printf("[NOTICE] new connection (client id = %d)\n", client);
+  printf("[NOTICE] new connection (client %d)\n", client);
 
   /* Já que está no processo filho, não precisa mais do socket listenfd.
    * Só o processo pai precisa deste socket. */
@@ -226,8 +226,15 @@ int main(int argc, char **argv)
   /* close the connection if this is not a mqtt packet of type connection */
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_CONNECT)
   {
-    fprintf(stderr,
-        "[ERROR]: client %d sent wrong packet type during CONNECT", client);
+    fprintf(stderr, "[ERROR] (client %d) wrong packet type", client);
+    abort_mqtt_connection(connection_fd);
+  }
+
+  /* close the connection if malformed remaining length */
+  mqtt_remaining_length = buffer[1];
+  if (mqtt_remaining_length != 12)
+  {
+    fprintf(stderr, "[ERROR] (client %d) malformed remaining length", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -244,11 +251,21 @@ int main(int argc, char **argv)
      └──────┴────────────────┘
   */
 
-  /* close connection if protocol name is wrong */
+  /* abort connection if protocol name is wrong */
   if (memcmp(&buffer[2], MQTT_PROTOCOL_NAME, 6))
   {
-    fprintf(stderr,
-        "[ERROR]: client %d sent wrong protocol name during CONNECT", client);
+    fprintf(stderr, "[ERROR] (client %d) wrong protocol name", client);
+    abort_mqtt_connection(connection_fd);
+  }
+
+  /* abort connection if protocol level is unsupported */
+  if (buffer[7] != MQTT_PROTOCOL_LEVEL)
+  {
+    /* but first, send a connack indicating it is not supported */
+    write(connection_fd, MQTT_PACKET_CONNACK_UNSUPPORTED, 4);
+
+    /* abort connection */
+    fprintf(stderr, "[ERROR] (client %d) unsupported protocol level", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -279,6 +296,15 @@ int main(int argc, char **argv)
   read_or_abort_mqtt_connection(connection_fd, buffer, 1);
   mqtt_control_packet_type = buffer[0] >> 4;
 
+  /* we are expecting either a subscribe or publish packet type.
+   * If this is another packet type, then abort connection */
+  if (mqtt_control_packet_type != MQTT_PACKET_TYPE_SUBSCRIBE &&
+      mqtt_control_packet_type != MQTT_PACKET_TYPE_PUBLISH)
+  {
+    fprintf(stderr, "[ERROR] (client %d) wrong packet type", client);
+    abort_mqtt_connection(connection_fd);
+  }
+
   /* process remaining length */
   unsigned int multiplier = 1;
   mqtt_remaining_length = 0;
@@ -287,8 +313,7 @@ int main(int argc, char **argv)
     mqtt_remaining_length += (buffer[0] % 128) * multiplier;
     if (multiplier > 128*128*128)
     {
-      fprintf(stderr,
-          "[ERROR]: client %u sent malformed remaining length", client);
+      fprintf(stderr, "[ERROR] (client %u) malformed remaining length", client);
       abort_mqtt_connection(connection_fd);
     }
     multiplier *= 128;
@@ -303,7 +328,6 @@ int main(int argc, char **argv)
   /* SUBSCRIBER */
   if (mqtt_control_packet_type == MQTT_PACKET_TYPE_SUBSCRIBE)
   {
-
     /*************************************************************************/
     /* Subscribe Packet
      ┌────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
@@ -396,7 +420,7 @@ int main(int argc, char **argv)
     if (client_file == NULL)
     {
       fprintf(stderr,
-          "[ERROR]: could not create file for client %d\n", client);
+          "[ERROR] (client %u) could not create client file\n", client);
       abort_mqtt_connection(connection_fd);
     }
     fclose(client_file);
@@ -440,7 +464,7 @@ int main(int argc, char **argv)
         }
 
         /* bad, unexpected message! Abort! */
-        fprintf(stderr, "[ERROR] unexpected packet from client %d\n", client);
+        fprintf(stderr, "[ERROR] (client %d) unexpected packet\n", client);
         abort_mqtt_connection(connection_fd);
       }
     }
@@ -455,7 +479,7 @@ int main(int argc, char **argv)
       if (mkfifo(pipe_name, 0777) == -1)
       {
         fprintf(stderr,
-            "[ERROR] Could not create FIFO for client %d\n", client);
+            "[ERROR] (client %u) could not create client FIFO\n", client);
         abort_mqtt_connection(connection_fd);
         break;
       }
@@ -638,12 +662,6 @@ int main(int argc, char **argv)
     close(connection_fd);
     return 0;
   }
-
-  /****************************************************************************/
-  /* wrong packet type, abort connection */
-  fprintf(stderr,
-      "[ERROR]: client %d sent wrong packet type after CONNACK", client);
-  abort_mqtt_connection(connection_fd);
 }
 
 /******************************************************************************/
@@ -660,7 +678,7 @@ void read_or_abort_mqtt_connection(int fd, void* buf, size_t nbytes)
 {
   if (read(fd, buf, nbytes) != ((ssize_t)nbytes))
   {
-    fprintf(stderr, "[ERROR]: unable to read from connection into buffer\n");
+    fprintf(stderr, "[ERROR] unable to read from connection into buffer\n");
     abort_mqtt_connection(fd);
   }
 }
