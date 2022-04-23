@@ -23,7 +23,7 @@
 
 /* constants */
 #define LISTENQ 1
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 250000
 
 /* local helpers */
 void abort_mqtt_connection(int connection_fd);
@@ -56,14 +56,14 @@ int main(int argc, char **argv)
 
   /* variables specific to MQTT. Their name already tells you what they are */
   unsigned char mqtt_control_packet_type;
-  unsigned char mqtt_remaining_length;
+  unsigned int  mqtt_remaining_length;
   unsigned char mqtt_packet_identifier[2];
   unsigned char mqtt_topic[MQTT_TOPIC_MAXLENGTH];
-  unsigned char mqtt_topic_length;
+  unsigned int  mqtt_topic_length;
   unsigned char mqtt_message[MQTT_MESSAGE_MAXLENGTH];
-  unsigned char mqtt_message_length;
+  unsigned int  mqtt_message_length;
   unsigned char mqtt_packet_publish[MQTT_PACKET_PUBLISH_MAXLENGTH];
-  unsigned char mqtt_packet_publish_length;
+  unsigned int  mqtt_packet_publish_length;
 
   /* variable to identify current client */
   int client = 0;
@@ -276,9 +276,25 @@ int main(int argc, char **argv)
 
   /* we don't know if the client is a subscriber or publisher
    * we have to find that out checking the packet type */
-  read_or_abort_mqtt_connection(connection_fd, buffer, 2);
+  read_or_abort_mqtt_connection(connection_fd, buffer, 1);
   mqtt_control_packet_type = buffer[0] >> 4;
-  mqtt_remaining_length = buffer[1];
+
+  /* process remaining length */
+  unsigned int multiplier = 1;
+  mqtt_remaining_length = 0;
+  do {
+    read(connection_fd, buffer, 1);
+    mqtt_remaining_length += (buffer[0] % 128) * multiplier;
+    if (multiplier > 128*128*128)
+    {
+      fprintf(stderr,
+          "[ERROR]: client %u sent malformed remaining length", client);
+      abort_mqtt_connection(connection_fd);
+    }
+    multiplier *= 128;
+  } while (buffer[0] > (unsigned char) 128);
+
+  printf("%u \n", mqtt_remaining_length);
 
   /* read the remaining data (variable header + payload) into the buffer */
   read_or_abort_mqtt_connection(connection_fd, buffer, mqtt_remaining_length);
@@ -301,9 +317,9 @@ int main(int argc, char **argv)
      ├────────┼───────────────────────────────────────────────────────────────┤
      │ byte 4 │ Package Identifier LSB                                        │
      ├────────┼───────────────────────────────────────────────────────────────┤
-     │ byte 5 │ Topic Length LSB                                              │
+     │ byte 5 │ Topic Length MSB                                              │
      ├────────┼───────────────────────────────────────────────────────────────┤
-     │ byte 6 │ Topic Length MSB                                              │
+     │ byte 6 │ Topic Length LSB                                              │
      ├────────┼───────────────────────────────────────────────────────────────┤
      │ byte 7 │ Topic                                                         │
      ├────────┼───────────────────────────────────────────────────────────────┤
@@ -322,8 +338,8 @@ int main(int argc, char **argv)
     /* topic identifier is the first two bytes */
     memcpy(mqtt_packet_identifier, buffer, 2);
 
-    /* topic length is the fourth byte */
-    mqtt_topic_length = buffer[3];
+    /* topic length is the third and fourth bytes */
+    mqtt_topic_length = (buffer[2] << 8) + buffer[3];
 
     /* topic name starts at fifth byte and ends after topic_length bytes */
     memcpy(mqtt_topic, &buffer[4], mqtt_topic_length);
@@ -501,21 +517,35 @@ int main(int argc, char **argv)
 
       /* second byte is remaining length */
       mqtt_remaining_length = 2 + mqtt_message_length + mqtt_topic_length;
-      mqtt_packet_publish[1] = mqtt_remaining_length;
+      mqtt_packet_publish_length = 1 + mqtt_remaining_length;
+
+      /* enconde remaining length */
+      int i = 0;
+      loop {
+        i += 1;
+        mqtt_packet_publish[i] = mqtt_remaining_length % 128;
+        mqtt_remaining_length /= 128;
+        if (mqtt_remaining_length == 0)
+          break;
+        mqtt_packet_publish[i] += 128;
+      }
+
+      /* update packet length to include the total bytes used to encode
+       * the remaining length */
+      mqtt_packet_publish_length += i;
 
       /* third and fourth bytes are the topic length */
-      mqtt_packet_publish[2] = 0;
-      mqtt_packet_publish[3] = mqtt_topic_length;
+      mqtt_packet_publish[i+1] = (mqtt_topic_length >> 8) << 8;
+      mqtt_packet_publish[i+2] = mqtt_topic_length % 256;
 
       /* then we append the topic name */
-      memcpy(&mqtt_packet_publish[4], mqtt_topic, mqtt_topic_length);
+      memcpy(&mqtt_packet_publish[i+3], mqtt_topic, mqtt_topic_length);
 
       /* then we append the message */
-      offset = 4 + mqtt_topic_length;
+      offset = (i+3) + mqtt_topic_length;
       memcpy(&mqtt_packet_publish[offset], mqtt_message, mqtt_message_length);
 
       /* write */
-      mqtt_packet_publish_length = 2 + mqtt_remaining_length;
       write(connection_fd, mqtt_packet_publish, mqtt_packet_publish_length);
     }
   }
@@ -552,7 +582,7 @@ int main(int argc, char **argv)
     */   
 
     /* topic length is second byte */
-    mqtt_topic_length = buffer[1];
+    mqtt_topic_length = (buffer[0] << 8) + buffer[1];
 
     /* copy topic name */
     memcpy(mqtt_topic, &buffer[2], mqtt_topic_length);
