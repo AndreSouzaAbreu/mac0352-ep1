@@ -37,9 +37,9 @@ público ZCBSD.
 
 ## Funcionamento do projeto
 
-O funcionamento do servidor, detalhes de implementação, lógica interna,  uso  de
-bibliotecas externas -- bem como os outros detalhes -- estão explicado nos slides
-em PDF disponiblizados junto com este projeto.
+O funcionamento do servidor, detalhes  de  implementação,  lógica  interna,  uso
+de bibliotecas externas -- bem como os outros detalhes --  estão  explicado  nos
+slides em PDF disponiblizados junto com este projeto.
 
 ## Autor
 

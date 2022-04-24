@@ -226,7 +226,7 @@ int main(int argc, char **argv)
   /* close the connection if this is not a mqtt packet of type connection */
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_CONNECT)
   {
-    fprintf(stderr, "[ERROR] (client %d) wrong packet type", client);
+    fprintf(stderr, "[ERROR] (client %d) wrong packet type\n", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -234,7 +234,7 @@ int main(int argc, char **argv)
   mqtt_remaining_length = buffer[1];
   if (mqtt_remaining_length != 12)
   {
-    fprintf(stderr, "[ERROR] (client %d) malformed remaining length", client);
+    fprintf(stderr, "[ERROR] (client %d) malformed remaining length\n", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -254,18 +254,18 @@ int main(int argc, char **argv)
   /* abort connection if protocol name is wrong */
   if (memcmp(&buffer[2], MQTT_PROTOCOL_NAME, 6))
   {
-    fprintf(stderr, "[ERROR] (client %d) wrong protocol name", client);
+    fprintf(stderr, "[ERROR] (client %d) wrong protocol name\n", client);
     abort_mqtt_connection(connection_fd);
   }
 
   /* abort connection if protocol level is unsupported */
-  if (buffer[7] != MQTT_PROTOCOL_LEVEL)
+  if (buffer[8] != MQTT_PROTOCOL_LEVEL)
   {
     /* but first, send a connack indicating it is not supported */
     write(connection_fd, MQTT_PACKET_CONNACK_UNSUPPORTED, 4);
 
     /* abort connection */
-    fprintf(stderr, "[ERROR] (client %d) unsupported protocol level", client);
+    fprintf(stderr, "[ERROR] (client %d) unsupported protocol level\n", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -301,7 +301,7 @@ int main(int argc, char **argv)
   if (mqtt_control_packet_type != MQTT_PACKET_TYPE_SUBSCRIBE &&
       mqtt_control_packet_type != MQTT_PACKET_TYPE_PUBLISH)
   {
-    fprintf(stderr, "[ERROR] (client %d) wrong packet type", client);
+    fprintf(stderr, "[ERROR] (client %d) wrong packet type\n", client);
     abort_mqtt_connection(connection_fd);
   }
 
@@ -313,13 +313,11 @@ int main(int argc, char **argv)
     mqtt_remaining_length += (buffer[0] % 128) * multiplier;
     if (multiplier > 128*128*128)
     {
-      fprintf(stderr, "[ERROR] (client %u) malformed remaining length", client);
+      fprintf(stderr, "[ERROR] (client %u) malformed remaining length\n", client);
       abort_mqtt_connection(connection_fd);
     }
     multiplier *= 128;
   } while (buffer[0] > (unsigned char) 128);
-
-  printf("%u \n", mqtt_remaining_length);
 
   /* read the remaining data (variable header + payload) into the buffer */
   read_or_abort_mqtt_connection(connection_fd, buffer, mqtt_remaining_length);
